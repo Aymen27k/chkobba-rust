@@ -51,6 +51,8 @@ sudo apt install libasound2-dev
 git clone [https://github.com/Aymen27k/chkobba-rust.git](https://github.com/Aymen27k/chkobba-rust.git)
 cd chkobba-rust
 cargo run --release
+```
+---
 
 ## 📜 Chkobba Scoring Quick Ref
 
