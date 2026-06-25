@@ -488,7 +488,7 @@ fn main() {
                 
                 if captured {
                     last_capture = Some(GameEntity::Player);
-                    if table.is_empty() && (!deck.is_empty() || !player_hand.is_empty() || !cpu_hand.is_empty()) {
+                    if table.is_empty() {
                         println!("{}", "💥 Chkobba! Player cleared the table and gets a bonus point! 💥".yellow().bold().on_black());
                         player_chkobbas += 1;
                         play_sound(NICE_CHKOBBA_SOUND, 2000);
@@ -519,7 +519,7 @@ fn main() {
                     let captured = process_turn(cpu_dropped_card, &mut table, &mut cpu_won_cards, "CPU");
                     if captured {
                         last_capture = Some(GameEntity::Cpu);
-                        if table.is_empty() && (!deck.is_empty() || !player_hand.is_empty() || !cpu_hand.is_empty()) {
+                        if table.is_empty() {
                             println!("{}", "💥 Chkobba! CPU cleared the table and gets a bonus point! 💥".yellow().bold().on_black());
                             cpu_chkobbas += 1;
                             play_sound(TABLE_SLAM_SOUND, 2000);
