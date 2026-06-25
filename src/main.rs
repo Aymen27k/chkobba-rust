@@ -263,6 +263,17 @@ enum GameEntity {
     Player,
     Cpu
 }
+// Function to play a random capture sound
+const TAKING_CARD1_SOUND: &[u8] = include_bytes!("../assets/taking_card1.mp3");
+const TAKING_CARD2_SOUND: &[u8] = include_bytes!("../assets/taking_card2.mp3");
+const TAKING_CARD3_SOUND: &[u8] = include_bytes!("../assets/taking_card3.mp3");
+fn play_random_capture_sound<R: rand::Rng + ?Sized>(rng: &mut R) {
+    let card_sounds = [TAKING_CARD1_SOUND, TAKING_CARD2_SOUND, TAKING_CARD3_SOUND];
+    
+    if let Some(&chosen_sound) = card_sounds.choose(rng) {
+        play_sound(chosen_sound, 1000);
+    }
+}
 fn main() {
     let mut player_match_wins = 0;
     let mut cpu_match_wins = 0;
@@ -276,11 +287,12 @@ fn main() {
     const VICTORY_SOUND: &[u8] = include_bytes!("../assets/victory_clap.mp3");
     const LOSS_SOUND: &[u8] = include_bytes!("../assets/lost_game.mp3");
     const TABLE_SLAM_SOUND: &[u8] = include_bytes!("../assets/table_slam.mp3");
-    
+
+
     while keep_playing {
 
     let mut deck = vec![];
-    let mut rng = rand::rng();
+    let mut rng: ThreadRng = rand::rng();
     let mut table: Vec<Card> = vec![];
     let mut player_hand: Vec<Card> = vec![];
     let mut cpu_hand: Vec<Card> = vec![];
@@ -488,6 +500,8 @@ fn main() {
                 
                 if captured {
                     last_capture = Some(GameEntity::Player);
+                    // 🔊 Play a random variation sound
+                    play_random_capture_sound(&mut rng);
                     if table.is_empty() {
                         println!("{}", "💥 Chkobba! Player cleared the table and gets a bonus point! 💥".yellow().bold().on_black());
                         player_chkobbas += 1;
@@ -519,6 +533,8 @@ fn main() {
                     let captured = process_turn(cpu_dropped_card, &mut table, &mut cpu_won_cards, "CPU");
                     if captured {
                         last_capture = Some(GameEntity::Cpu);
+                        // 🔊 Play a random variation sound
+                        play_random_capture_sound(&mut rng);
                         if table.is_empty() {
                             println!("{}", "💥 Chkobba! CPU cleared the table and gets a bonus point! 💥".yellow().bold().on_black());
                             cpu_chkobbas += 1;
