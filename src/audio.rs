@@ -2,8 +2,7 @@
 
 use std::io::Cursor;
 use std::thread;
-use std::time::Duration;
-use rodio::Decoder;
+use rodio::{Decoder, Player};
 // Import AtomicBool and Ordering for thread-safe global state
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -22,8 +21,7 @@ pub fn is_muted() -> bool {
     IS_MUTED.load(Ordering::SeqCst)
 }
 
-pub fn play_sound(audio_bytes: &'static [u8], duration_ms: u64) {
-    // 2. CHECK IF MUTED: If true, exit immediately without spawning a thread or opening the sound card!
+pub fn play_sound(audio_bytes: &'static [u8]) {
     if is_muted() {
         return;
     }
@@ -32,12 +30,12 @@ pub fn play_sound(audio_bytes: &'static [u8], duration_ms: u64) {
         if let Ok(mut handle) = rodio::DeviceSinkBuilder::open_default_sink() {
             handle.log_on_drop(false);
             
-            let _player = rodio::Player::connect_new(&handle.mixer());
+            let player = Player::connect_new(&handle.mixer());
             let cursor = Cursor::new(audio_bytes);
             
             if let Ok(source) = Decoder::try_from(cursor) {
-                handle.mixer().add(source);
-                thread::sleep(Duration::from_millis(duration_ms));
+                player.append(source);
+                player.sleep_until_end();
             }
         }
     });

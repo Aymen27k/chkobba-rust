@@ -93,15 +93,14 @@ fn process_turn(dropped_card: Card, table: &mut Vec<Card>, won_cards: &mut Vec<C
     // 1. Try single card match (combo_size = 1)
     // ==========================================
     if let Some((mut indices_array, len)) = find_combination_match(target, table, 1) {
-        // Slice out the valid section of our stack array
         let valid_indices = &mut indices_array[0..len];
         
         let captured_card = table.remove(valid_indices[0]);
-        println!("Boom! A direct match for {}! You captured: {} -> {}", player_name, dropped_card.format_card(), captured_card.format_card());
+        println!("Direct match! {} captured {} with {}", player_name, captured_card.format_card(), dropped_card.format_card());
         
         won_cards.push(captured_card);
         won_cards.push(dropped_card);
-        println!("{} has won: {} Card(s)", player_name, won_cards.len());
+        println!("{} total captured cards: {}", player_name, won_cards.len());
         return true;
     } 
     
@@ -109,21 +108,17 @@ fn process_turn(dropped_card: Card, table: &mut Vec<Card>, won_cards: &mut Vec<C
     // 2. Try pair combo match (combo_size = 2)
     // ==========================================
     if let Some((mut indices_array, len)) = find_combination_match(target, table, 2) {
-        // Slice out the valid section of our stack array
         let valid_indices = &mut indices_array[0..len];
-        
-        // CRITICAL SYSTEM DESIGN TRICK: Sort indices highest to lowest 
-        // so removing valid_indices[0] doesn't shift valid_indices[1] in the vector!
         valid_indices.sort_by(|a, b| b.cmp(a)); 
         
-        let card2 = table.remove(valid_indices[0]); // Highest index
-        let card1 = table.remove(valid_indices[1]); // Lowest index
+        let card2 = table.remove(valid_indices[0]);
+        let card1 = table.remove(valid_indices[1]);
         
-        println!("Wow! {} found a combo match! {} -> {} + {}", player_name, dropped_card.format_card(), card1.format_card(), card2.format_card());
+        println!("Combo match! {} captured {} + {} with {}", player_name, card1.format_card(), card2.format_card(), dropped_card.format_card());
         won_cards.push(card1);
         won_cards.push(card2);
         won_cards.push(dropped_card);
-        println!("{} has won: {} Card(s)", player_name, won_cards.len());
+        println!("{} total captured cards: {}", player_name, won_cards.len());
         return true;
     } 
     
@@ -131,28 +126,25 @@ fn process_turn(dropped_card: Card, table: &mut Vec<Card>, won_cards: &mut Vec<C
     // 3. Try three-card combo match (combo_size = 3)
     // ==========================================
     if let Some((mut indices_array, len)) = find_combination_match(target, table, 3) {
-        // Slice out the valid section of our stack array
         let valid_indices = &mut indices_array[0..len];
-        
-        // Sort highest to lowest again for seamless removal
         valid_indices.sort_by(|a, b| b.cmp(a)); 
         
-        let captured3 = table.remove(valid_indices[0]); // Highest
+        let captured3 = table.remove(valid_indices[0]);
         let captured2 = table.remove(valid_indices[1]);
-        let captured1 = table.remove(valid_indices[2]); // Lowest
+        let captured1 = table.remove(valid_indices[2]);
 
-        println!("Insane! {} got a triple combo match!\n{} -> {} + {} + {}", player_name, dropped_card.format_card(), captured1.format_card(), captured2.format_card(), captured3.format_card());
+        println!("Triple combo match! {} captured {} + {} + {} with {}", player_name, captured1.format_card(), captured2.format_card(), captured3.format_card(), dropped_card.format_card());
         
         won_cards.push(dropped_card);
         won_cards.push(captured1);
         won_cards.push(captured2);
         won_cards.push(captured3);
-        println!("{} has won: {} Card(s)", player_name, won_cards.len());
+        println!("{} total captured cards: {}", player_name, won_cards.len());
         return true;
     }
 
     // 4. No match at all - Card stays on table
-    println!("No match for {}. The card stays on the table.", player_name);
+    println!("No match for {}. {} played to the table.", dropped_card.format_card(), player_name);
     table.push(dropped_card);
     false
 }
@@ -271,7 +263,7 @@ fn play_random_capture_sound<R: rand::Rng + ?Sized>(rng: &mut R) {
     let card_sounds = [TAKING_CARD1_SOUND, TAKING_CARD2_SOUND, TAKING_CARD3_SOUND];
     
     if let Some(&chosen_sound) = card_sounds.choose(rng) {
-        play_sound(chosen_sound, 1000);
+        play_sound(chosen_sound);
     }
 }
 fn main() {
@@ -377,7 +369,7 @@ fn main() {
 
     }
     // In your initialization section
-    play_sound(SHUFFLE_SOUND, 2000);
+    play_sound(SHUFFLE_SOUND);
     deck.shuffle(&mut rng);
     while !game_over {
         let mut round_over = false;
@@ -505,7 +497,7 @@ fn main() {
                     if table.is_empty() {
                         println!("{}", "💥 Chkobba! Player cleared the table and gets a bonus point! 💥".yellow().bold().on_black());
                         player_chkobbas += 1;
-                        play_sound(NICE_CHKOBBA_SOUND, 2000);
+                        play_sound(NICE_CHKOBBA_SOUND);
                     }
                 }
             }
@@ -538,7 +530,7 @@ fn main() {
                         if table.is_empty() {
                             println!("{}", "💥 Chkobba! CPU cleared the table and gets a bonus point! 💥".yellow().bold().on_black());
                             cpu_chkobbas += 1;
-                            play_sound(TABLE_SLAM_SOUND, 2000);
+                            play_sound(TABLE_SLAM_SOUND);
                         }
                     }
                 }
@@ -560,7 +552,7 @@ fn main() {
         if !table.is_empty() {
             println!("\n--- FINAL SWEEP ---");
             println!("Cards left on the table go to the last player who made a capture!");
-            play_sound(SWEEP_SOUND, 1000);
+            play_sound(SWEEP_SOUND);
 
             match last_capture {
                 Some(GameEntity::Player) => {
@@ -663,7 +655,7 @@ fn main() {
                 let c_block = format!("CPU: {} Points", cpu_final_score).dimmed().to_string();
                 game_stats.player_wins += 1;
                 player_match_wins += 1;
-                play_sound(VICTORY_SOUND, 17000);
+                play_sound(VICTORY_SOUND);
                 println!("{} | {}", p_block, c_block);
                 
             } else if cpu_final_score > player_final_score {
@@ -672,7 +664,7 @@ fn main() {
                 let c_block = format!(" CPU: {} Points ", cpu_final_score).red().bold().on_white().to_string();
                 game_stats.cpu_wins += 1;
                 cpu_match_wins += 1;
-                play_sound(LOSS_SOUND, 5000);
+                play_sound(LOSS_SOUND);
                 println!("{} | {}", p_block, c_block);
                 
             } else {
