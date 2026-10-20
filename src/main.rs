@@ -14,6 +14,8 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use std::io::{self, Write};
 use itertools::Itertools;
 
+use crate::cpu::Difficulty::{self, Easy};
+use crate::cpu::Difficulty::Hard;
 
 
 fn draw_cards(deck: &mut Vec<Card>, num_card: usize ) -> Vec<Card> {
@@ -61,92 +63,136 @@ real_index
 }
 
 
-// New function to calculate matches
-fn find_combination_match(target_value: usize, table: &[Card], combo_size: usize) -> Option<([usize; 3], usize)> {
-    // 1. itertools generates index patterns lazily
-    for combo_indices in (0..table.len()).combinations(combo_size) {
-        let sum: usize = combo_indices.iter()
-            .map(|&idx| table[idx].rank.value())
-            .sum();
-            
-        // 2. We found a match!
-        if sum == target_value {
-            // Allocate a 3-slot array entirely on the STACK, filled with 0s
-            let mut stack_array = [0; 3];
-            
-            // 3. Copy the indices from the temporary iterator into our stack array
-            for (i, &idx) in combo_indices.iter().enumerate() {
-                stack_array[i] = idx;
+/// Finds ALL valid combinations of table card indices that sum up to `target_value`.
+fn find_all_captures(table: &[Card], target_value: usize) -> Vec<Vec<usize>> {
+    let mut all_captures = Vec::new();
+
+    // Try every possible combination size from 1 up to the total cards on the table
+    for combo_size in 1..=table.len() {
+        for combo_indices in (0..table.len()).combinations(combo_size) {
+            let sum: usize = combo_indices.iter()
+                .map(|&idx| table[idx].rank.value())
+                .sum();
+
+            if sum == target_value {
+                all_captures.push(combo_indices);
             }
-            
-            // 4. Return the array AND the actual number of cards used (combo_size)
-            return Some((stack_array, combo_size));
         }
     }
-    None
+
+    all_captures
 }
 
-fn process_turn(dropped_card: Card, table: &mut Vec<Card>, won_cards: &mut Vec<Card>, player_name: &str) -> bool {
+fn process_turn(
+    dropped_card: Card, 
+    table: &mut Vec<Card>, 
+    won_cards: &mut Vec<Card>, 
+    player_name: &str, 
+    is_human: bool,
+    cpu_chosen_indices: Option<Vec<usize>>, // 👈 Replaces hardcoded 0s for CPU
+) -> bool {
     let target = dropped_card.rank.value();
 
-    // ==========================================
-    // 1. Try single card match (combo_size = 1)
-    // ==========================================
-    if let Some((mut indices_array, len)) = find_combination_match(target, table, 1) {
-        let valid_indices = &mut indices_array[0..len];
-        
-        let captured_card = table.remove(valid_indices[0]);
-        println!("Direct match! {} captured {} with {}", player_name, captured_card.format_card(), dropped_card.format_card());
-        
-        won_cards.push(captured_card);
-        won_cards.push(dropped_card);
-        println!("{} total captured cards: {}", player_name, won_cards.len());
-        return true;
-    } 
-    
-    // ==========================================
-    // 2. Try pair combo match (combo_size = 2)
-    // ==========================================
-    if let Some((mut indices_array, len)) = find_combination_match(target, table, 2) {
-        let valid_indices = &mut indices_array[0..len];
-        valid_indices.sort_by(|a, b| b.cmp(a)); 
-        
-        let card2 = table.remove(valid_indices[0]);
-        let card1 = table.remove(valid_indices[1]);
-        
-        println!("Combo match! {} captured {} + {} with {}", player_name, card1.format_card(), card2.format_card(), dropped_card.format_card());
-        won_cards.push(card1);
-        won_cards.push(card2);
-        won_cards.push(dropped_card);
-        println!("{} total captured cards: {}", player_name, won_cards.len());
-        return true;
-    } 
-    
-    // ==========================================
-    // 3. Try three-card combo match (combo_size = 3)
-    // ==========================================
-    if let Some((mut indices_array, len)) = find_combination_match(target, table, 3) {
-        let valid_indices = &mut indices_array[0..len];
-        valid_indices.sort_by(|a, b| b.cmp(a)); 
-        
-        let captured3 = table.remove(valid_indices[0]);
-        let captured2 = table.remove(valid_indices[1]);
-        let captured1 = table.remove(valid_indices[2]);
+    // 🤖 If CPU is playing, use its pre-evaluated AI choice directly!
+    if !is_human {
+        if let Some(mut chosen_indices) = cpu_chosen_indices {
+            // Sort in descending order to safely remove from table without index shift bugs
+            chosen_indices.sort_by(|a, b| b.cmp(a));
 
-        println!("Triple combo match! {} captured {} + {} + {} with {}", player_name, captured1.format_card(), captured2.format_card(), captured3.format_card(), dropped_card.format_card());
-        
-        won_cards.push(dropped_card);
-        won_cards.push(captured1);
-        won_cards.push(captured2);
-        won_cards.push(captured3);
-        println!("{} total captured cards: {}", player_name, won_cards.len());
-        return true;
+            if chosen_indices.len() == 1 {
+                print!("Direct match! {} captured ", player_name);
+            } else {
+                print!("{} chose combo! Captured ", player_name);
+            }
+
+            for &idx in &chosen_indices {
+                let card = table.remove(idx);
+                print!("{} ", card.format_card());
+                won_cards.push(card);
+            }
+            println!("with {}", dropped_card.format_card());
+            
+            won_cards.push(dropped_card);
+            println!("{} total captured cards: {}", player_name, won_cards.len());
+            return true;
+        } else {
+            // No matches -> Card dropped to table
+            println!("No match for {}. {} played to the table.", dropped_card.format_card(), player_name);
+            table.push(dropped_card);
+            return false;
+        }
     }
 
-    // 4. No match at all - Card stays on table
-    println!("No match for {}. {} played to the table.", dropped_card.format_card(), player_name);
-    table.push(dropped_card);
-    false
+    // 👤 HUMAN TURN LOGIC (Unchanged - uses interactive menus when choices exist)
+    let captures = find_all_captures(table, target);
+
+    if captures.is_empty() {
+        println!("No match for {}. {} played to the table.", dropped_card.format_card(), player_name);
+        table.push(dropped_card);
+        false
+    } else {
+        let single_card_captures: Vec<Vec<usize>> = captures
+            .iter()
+            .filter(|combo| combo.len() == 1)
+            .cloned()
+            .collect();
+
+        if !single_card_captures.is_empty() {
+            let choice_idx = if single_card_captures.len() == 1 {
+                0
+            } else {
+                select_capture_with_arrows(&single_card_captures, table, &dropped_card)
+            };
+
+            let mut chosen_indices = single_card_captures[choice_idx].clone();
+            chosen_indices.sort_by(|a, b| b.cmp(a));
+
+            print!("Direct match! {} captured ", player_name);
+            for &idx in &chosen_indices {
+                let card = table.remove(idx);
+                print!("{} ", card.format_card());
+                won_cards.push(card);
+            }
+            println!("with {}", dropped_card.format_card());
+            
+            won_cards.push(dropped_card);
+            println!("{} total captured cards: {}", player_name, won_cards.len());
+            return true;
+        }
+
+        if captures.len() == 1 {
+            let mut chosen_indices = captures[0].clone();
+            chosen_indices.sort_by(|a, b| b.cmp(a));
+
+            print!("Combo match! {} captured ", player_name);
+            for &idx in &chosen_indices {
+                let card = table.remove(idx);
+                print!("{} ", card.format_card());
+                won_cards.push(card);
+            }
+            println!("with {}", dropped_card.format_card());
+            
+            won_cards.push(dropped_card);
+            println!("{} total captured cards: {}", player_name, won_cards.len());
+            true
+        } else {
+            let choice_idx = select_capture_with_arrows(&captures, table, &dropped_card);
+            let mut chosen_indices = captures[choice_idx].clone();
+            chosen_indices.sort_by(|a, b| b.cmp(a));
+
+            print!("{} chose combo! Captured ", player_name);
+            for &idx in &chosen_indices {
+                let card = table.remove(idx);
+                print!("{} ", card.format_card());
+                won_cards.push(card);
+            }
+            println!("with {}", dropped_card.format_card());
+
+            won_cards.push(dropped_card);
+            println!("{} total captured cards: {}", player_name, won_cards.len());
+            true
+        }
+    }
 }
 fn pick_initial_dealer() -> GameEntity {
     let mut rng = rand::rng();
@@ -156,6 +202,72 @@ fn pick_initial_dealer() -> GameEntity {
     } else {
         GameEntity::Cpu
     }
+}
+fn select_capture_with_arrows(captures: &[Vec<usize>], table: &[Card], dropped_card: &Card) -> usize {
+    let mut selected_index = 0;
+    
+    // 🎯 Dynamic prompt label based on capture types!
+    let prompt_label = if captures.iter().all(|combo| combo.len() == 1) {
+        "Select target:"
+    } else {
+        "Choose combo:"
+    };
+
+    enable_raw_mode().unwrap();
+    
+    let result = loop {
+        // Print the dynamic prompt inline
+        print!(
+            "\rMultiple captures for {}! {} ", 
+            dropped_card.format_card(), 
+            prompt_label
+        );
+        
+        for (i, combo) in captures.iter().enumerate() {
+            // Format the cards inside this specific combination (e.g., "7♦ + 2♣")
+            let combo_str: String = combo.iter()
+                .map(|&idx| table[idx].format_card())
+                .collect::<Vec<_>>()
+                .join(" + ");
+            
+            if i == selected_index {
+                print!("> [ {} ]  ", combo_str);
+            } else {
+                print!("  [ {} ]  ", combo_str);
+            }
+        }
+        
+        // Clear trailing characters if text length shifts
+        print!("\x1B[K"); 
+        io::stdout().flush().unwrap();
+
+        if let Event::Key(key_event) = event::read().unwrap() {
+            if key_event.kind == event::KeyEventKind::Press {
+                match key_event.code {
+                    KeyCode::Left | KeyCode::Up => {
+                        if selected_index > 0 { selected_index -= 1; } 
+                        else { selected_index = captures.len() - 1; }
+                    }
+                    KeyCode::Right | KeyCode::Down => {
+                        if selected_index < captures.len() - 1 { selected_index += 1; } 
+                        else { selected_index = 0; }
+                    }
+                    KeyCode::Enter => {
+                        break selected_index;
+                    }
+                    KeyCode::Esc => {
+                        disable_raw_mode().unwrap();
+                        std::process::exit(0);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    };
+
+    disable_raw_mode().unwrap();
+    println!(); 
+    result
 }
 fn select_card_with_arrows(hand: &[Card]) -> usize {
     let mut selected_index = 0;
@@ -303,16 +415,23 @@ fn main() {
     // Manually build a table to test specific scenarios
     table = vec![
         Card { suit: Suit::Spades, rank: Rank::Five },
-
+        Card { suit: Suit::Hearts, rank: Rank::Five },
+        Card { suit: Suit::Diamonds, rank: Rank::Five },
     ];
 
     // Manually build your player hand
     player_hand = vec![
         Card { suit: Suit::Clubs, rank: Rank::Five },
-        Card { suit: Suit::Diamonds, rank: Rank::Six },
+        Card { suit: Suit::Diamonds, rank: Rank::King },
         Card { suit: Suit::Spades, rank: Rank::Seven }
-    ];
-    // ---------------------------------*/
+    ];*/
+    /*cpu_hand = vec![
+        Card { suit: Suit::Clubs, rank: Rank::Queen },
+        Card { suit: Suit::Diamonds, rank: Rank::Six },
+        Card { suit: Suit::Spades, rank: Rank::Seven },
+        Card { suit: Suit::Clubs, rank: Rank::Seven }
+    ];*/
+    // ---------------------------------
     println!("{}", "=================================".red());
     println!("{}", "       WELCOME TO CHKOBBA!       ".yellow().bold().on_red());
     println!("{}", "=================================".red());
@@ -333,6 +452,16 @@ fn main() {
         println!("💾 No historical stats found. Starting fresh!");
     }
 
+    // 🤖 DYNAMIC DIFFICULTY ADJUSTMENT (DDA)
+    // Default to Easy, but switch to Hard if the player is dominating over a sample size of games
+    let current_difficulty = if game_stats.total_games >= 5 && win_rate >= 65.0 {
+        Difficulty::Hard
+    } else {
+        Difficulty::Easy
+    };
+
+    // Difficulty Print
+    println!("Starting Chkobba on {:?} mode!", current_difficulty);
 
     //  Dealer printing
     if total_matches_played == 0 {
@@ -488,7 +617,7 @@ fn main() {
                 };
 
                 let dropped_card = player_hand.remove(real_index);
-                let captured = process_turn(dropped_card, &mut table, &mut player_won_cards, "Player");
+                let captured = process_turn(dropped_card, &mut table, &mut player_won_cards, "Player", true, None);
                 
                 if captured {
                     last_capture = Some(GameEntity::Player);
@@ -511,18 +640,19 @@ fn main() {
                     println!("{}","--- CPU TURN ---".yellow().bold());
 
 
-                    // Debugging logs to visualize CPU hand before decision
-                    /*let display_cpu_hand = cpu_hand
+                    /*// Debugging logs to visualize CPU hand before decision
+                    let display_cpu_hand = cpu_hand
                         .iter()
                         .map(|card| card.format_card())
                         .join(" ");
                     println!("We have on the cpu_hand: {}", display_cpu_hand);*/
                     
-                    let best_move_index = cpu::choose_best_move(&cpu_hand, &table);
+                    let (best_move_index, cpu_capture) = cpu::choose_best_move(&cpu_hand, &table, current_difficulty);
                     let cpu_dropped_card = cpu_hand.remove(best_move_index);
                     println!("CPU decides to play: {}", cpu_dropped_card.format_card());
                     
-                    let captured = process_turn(cpu_dropped_card, &mut table, &mut cpu_won_cards, "CPU");
+                    let cpu_indices = cpu_capture.map(|cap| cap.to_indices());
+                    let captured = process_turn(cpu_dropped_card, &mut table, &mut cpu_won_cards, "CPU", false, cpu_indices);
                     if captured {
                         last_capture = Some(GameEntity::Cpu);
                         // 🔊 Play a random variation sound
@@ -550,8 +680,8 @@ fn main() {
     if deck.is_empty() {
         // Check if there are actually any cards left stranded in the center for FINAL SWEEP
         if !table.is_empty() {
-            println!("\n--- FINAL SWEEP ---");
-            println!("Cards left on the table go to the last player who made a capture!");
+            println!("\n🧹 --- FINAL TABLE SWEEP ---");
+            println!("The remaining {} card(s) on the table go to the last capturer!", table.len());
             play_sound(SWEEP_SOUND);
 
             match last_capture {

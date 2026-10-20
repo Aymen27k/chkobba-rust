@@ -1,4 +1,5 @@
 use crate::card::{Card, Rank, Suit};
+use rand::RngExt;
 
 /// Represents a distinct combination of table card indices that can be captured.
 #[derive(Debug, Clone)]
@@ -6,6 +7,22 @@ pub enum CaptureOption {
     Direct(usize),               // Direct single-card index match
     Pair(usize, usize),          // Two table indices that sum to target
     Triplet(usize, usize, usize), // Three table indices that sum to target
+}
+
+impl CaptureOption {
+    pub fn to_indices(&self) -> Vec<usize> {
+        match self {
+            CaptureOption::Direct(i) => vec![*i],
+            CaptureOption::Pair(i, j) => vec![*i, *j],
+            CaptureOption::Triplet(i, j, k) => vec![*i, *j, *k],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Difficulty {
+    Easy,
+    Hard,
 }
 
 /// A fully calculated candidate move for the CPU to rank.
@@ -26,8 +43,8 @@ fn find_all_options_for_card(card: &Card, table: &[Card]) -> Vec<CaptureOption> 
             options.push(CaptureOption::Direct(i));
         }
     }
-    
-    // If we found direct matches, we can prioritize those and skip combo checks
+
+    // ⚖️ STRICT CHKOBBA RULE: Direct matches take absolute priority!
     if !options.is_empty() {
         return options;
     }
@@ -60,53 +77,46 @@ fn is_haya(card: &Card) -> bool {
     card.suit == Suit::Diamonds && card.rank == Rank::Seven
 }
 
-/// Main entry point for the AI brain. Returns the chosen card index from the CPU's hand.
-pub fn choose_best_move(cpu_hand: &[Card], table: &[Card]) -> usize {
+/// Main entry point for the AI brain. 
+/// Returns (hand_card_index, chosen_capture_option).
+pub fn choose_best_move(
+    cpu_hand: &[Card], 
+    table: &[Card], 
+    difficulty: Difficulty
+) -> (usize, Option<CaptureOption>) {
     let mut candidates = Vec::new();
 
     for (hand_idx, card) in cpu_hand.iter().enumerate() {
         let possible_captures = find_all_options_for_card(card, table);
 
         if possible_captures.is_empty() {
-            // SCENARIO A: No matches available. The card will be dropped.
             let mut score = 0;
-
-            // DANGER ZONE EVALUATION:
-            // If dropping this card makes the total table sum easy to clear (1-7), apply a penalty
             let table_sum: usize = table.iter().map(|c| c.rank.value()).sum();
             let future_sum = table_sum + card.rank.value();
             if future_sum <= 7 {
                 score -= 10; 
             }
-
             candidates.push(CandidateMove {
                 hand_index: hand_idx,
                 capture: None,
                 score,
             });
         } else {
-            // SCENARIO B: Matches are available! Calculate heuristic scores.
             for capture in possible_captures {
                 let mut score = 0;
-
-                // Track total cards involved in this capture option
                 let total_cards_to_capture = match capture {
                     CaptureOption::Direct(_) => 1,
                     CaptureOption::Pair(_, _) => 2,
                     CaptureOption::Triplet(_, _, _) => 3,
                 };
 
-                // Reward capturing multiple cards (+20 per combo) to secure El Kārṭa
-                if total_cards_to_capture > 1 {
-                    score += 20;
-                }
+                if total_cards_to_capture > 1 { score += 20; }
 
-                // Evaluate individual items inside the combination
                 match capture {
                     CaptureOption::Direct(i) => {
                         let target_card = &table[i];
-                        if is_haya(target_card) || is_haya(card) { score += 100; } // Capture 7♦
-                        if target_card.rank == Rank::Seven || card.rank == Rank::Seven { score += 10; } // Capturing a 7
+                        if is_haya(target_card) || is_haya(card) { score += 100; }
+                        if target_card.rank == Rank::Seven || card.rank == Rank::Seven { score += 10; }
                     }
                     CaptureOption::Pair(i, j) => {
                         let c1 = &table[i];
@@ -128,8 +138,6 @@ pub fn choose_best_move(cpu_hand: &[Card], table: &[Card]) -> usize {
                     }
                 }
 
-                // Check for Chkobba (Board Sweep)
-                // If the number of cards we are taking matches the table count, it's a board wipe!
                 if total_cards_to_capture == table.len() {
                     score += 50;
                 }
@@ -143,13 +151,41 @@ pub fn choose_best_move(cpu_hand: &[Card], table: &[Card]) -> usize {
         }
     }
 
-    // Find the move with the highest heuristic score
-    // If scores are tied, it naturally defaults to the last one checked
-    candidates
-        .into_iter()
-        .max_by_key(|m| m.score)
-        .map(|m| m.hand_index)
-        .unwrap_or(0) // Fallback safety, though a hand will never be completely empty here
+    // Return the full candidate (both hand index and capture choice)
+    // Sort candidates from highest score to lowest score
+    // Sort candidates from highest score to lowest score
+    candidates.sort_by(|a, b| b.score.cmp(&a.score));
+
+    let mut rng = rand::rng();
+
+    match difficulty {
+        Difficulty::Easy => {
+            // 🎲 60% chance to pick the top move, 40% chance to pick a random/sub-optimal one
+            if rng.random_bool(0.60) {
+                candidates
+                    .first()
+                    .map(|m| (m.hand_index, m.capture.clone()))
+                    .unwrap_or((0, None))
+            } else {
+                let choice_idx = rng.random_range(0..candidates.len());
+                let chosen = &candidates[choice_idx];
+                (chosen.hand_index, chosen.capture.clone())
+            }
+        }
+        Difficulty::Hard => {
+            // 🎲 80% chance to pick the optimal move, 20% chance to slip up
+            if rng.random_bool(0.80) {
+                candidates
+                    .first()
+                    .map(|m| (m.hand_index, m.capture.clone()))
+                    .unwrap_or((0, None))
+            } else {
+                let choice_idx = rng.random_range(0..candidates.len());
+                let chosen = &candidates[choice_idx];
+                (chosen.hand_index, chosen.capture.clone())
+            }
+        }
+    }
 }
 /// Evaluates whether a cut card is worth keeping in a vacuum (before table cards are dealt).
 pub fn evaluate_blind_cut_card(first_card: &Card) -> bool {
