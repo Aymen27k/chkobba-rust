@@ -13,6 +13,7 @@ A fully native, multi-threaded, cross-platform terminal implementation of the cl
   - **Easy Mode:** Features a subtle probability margin for the CPU to occasionally make human-like mistakes or suboptimal plays.
   - **Hard Mode:** Automatically unlocks once you hit a minimum of **5 matches played** and maintain a **$\ge 65\%$ win rate**.
   - **Adaptive CPU AI:** The CPU opponent evaluates all board combinations and strategically picks its best capture route based on the active difficulty mode.
+* 🧹 **Polished Terminal UI:** Context-aware prompts, dynamic card styling, and clean thematic prints for round summaries, candidate captures, and Final Sweeps.
 * 🔇 **Hardware Mute Switch:** Dynamically toggle all audio on/off by pressing `M` mid-game to stream your own music playlist without layout glitches.
 * 🤖 **Smart CPU Opponent:** Face off against a script that dynamically calculates matches, sweeps, and table clears.
 * 📊 **Persistent Statistics:** Tracks your win/loss streaks across sessions.

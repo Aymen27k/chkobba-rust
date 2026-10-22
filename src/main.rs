@@ -2,6 +2,7 @@ mod card;
 mod cpu;
 mod stats;
 mod audio;
+mod ui;
 use card::{Rank, Suit, Card};
 use stats::{GameStats, save_stats, load_stats};
 use strum::IntoEnumIterator;
@@ -141,7 +142,7 @@ fn process_turn(
             let choice_idx = if single_card_captures.len() == 1 {
                 0
             } else {
-                select_capture_with_arrows(&single_card_captures, table, &dropped_card)
+                ui::select_capture_with_arrows(&single_card_captures, table, &dropped_card)
             };
 
             let mut chosen_indices = single_card_captures[choice_idx].clone();
@@ -176,7 +177,7 @@ fn process_turn(
             println!("{} total captured cards: {}", player_name, won_cards.len());
             true
         } else {
-            let choice_idx = select_capture_with_arrows(&captures, table, &dropped_card);
+            let choice_idx = ui::select_capture_with_arrows(&captures, table, &dropped_card);
             let mut chosen_indices = captures[choice_idx].clone();
             chosen_indices.sort_by(|a, b| b.cmp(a));
 
@@ -202,125 +203,6 @@ fn pick_initial_dealer() -> GameEntity {
     } else {
         GameEntity::Cpu
     }
-}
-fn select_capture_with_arrows(captures: &[Vec<usize>], table: &[Card], dropped_card: &Card) -> usize {
-    let mut selected_index = 0;
-    
-    // 🎯 Dynamic prompt label based on capture types!
-    let prompt_label = if captures.iter().all(|combo| combo.len() == 1) {
-        "Select target:"
-    } else {
-        "Choose combo:"
-    };
-
-    enable_raw_mode().unwrap();
-    
-    let result = loop {
-        // Print the dynamic prompt inline
-        print!(
-            "\rMultiple captures for {}! {} ", 
-            dropped_card.format_card(), 
-            prompt_label
-        );
-        
-        for (i, combo) in captures.iter().enumerate() {
-            // Format the cards inside this specific combination (e.g., "7♦ + 2♣")
-            let combo_str: String = combo.iter()
-                .map(|&idx| table[idx].format_card())
-                .collect::<Vec<_>>()
-                .join(" + ");
-            
-            if i == selected_index {
-                print!("> [ {} ]  ", combo_str);
-            } else {
-                print!("  [ {} ]  ", combo_str);
-            }
-        }
-        
-        // Clear trailing characters if text length shifts
-        print!("\x1B[K"); 
-        io::stdout().flush().unwrap();
-
-        if let Event::Key(key_event) = event::read().unwrap() {
-            if key_event.kind == event::KeyEventKind::Press {
-                match key_event.code {
-                    KeyCode::Left | KeyCode::Up => {
-                        if selected_index > 0 { selected_index -= 1; } 
-                        else { selected_index = captures.len() - 1; }
-                    }
-                    KeyCode::Right | KeyCode::Down => {
-                        if selected_index < captures.len() - 1 { selected_index += 1; } 
-                        else { selected_index = 0; }
-                    }
-                    KeyCode::Enter => {
-                        break selected_index;
-                    }
-                    KeyCode::Esc => {
-                        disable_raw_mode().unwrap();
-                        std::process::exit(0);
-                    }
-                    _ => {}
-                }
-            }
-        }
-    };
-
-    disable_raw_mode().unwrap();
-    println!(); 
-    result
-}
-fn select_card_with_arrows(hand: &[Card]) -> usize {
-    let mut selected_index = 0;
-    
-    enable_raw_mode().unwrap();
-    
-    let result = loop {
-        // Dynamic prompt showing current volume status
-        let mute_status = if crate::audio::is_muted() { " [MUTED 🔇]" } else { "" };
-        print!("\rWhich card to drop?{} ", mute_status);
-        
-        for (i, card) in hand.iter().enumerate() {
-            if i == selected_index {
-                print!("> {}  ", card.format_card());
-            } else {
-                print!("  {}  ", card.format_card());
-            }
-        }
-        // Clear trailing characters if the prompt string changes length
-        print!("\x1B[K"); 
-        io::stdout().flush().unwrap();
-
-        if let Event::Key(key_event) = event::read().unwrap() {
-            if key_event.kind == event::KeyEventKind::Press {
-                match key_event.code {
-                    KeyCode::Left | KeyCode::Up => {
-                        if selected_index > 0 { selected_index -= 1; } 
-                        else { selected_index = hand.len() - 1; }
-                    }
-                    KeyCode::Right | KeyCode::Down => {
-                        if selected_index < hand.len() - 1 { selected_index += 1; } 
-                        else { selected_index = 0; }
-                    }
-                    // INTERCEPT THE 'M' KEY FOR MUTING!
-                    KeyCode::Char('m') | KeyCode::Char('M') => {
-                        crate::audio::toggle_mute();
-                    }
-                    KeyCode::Enter => {
-                        break selected_index;
-                    }
-                    KeyCode::Esc => {
-                        disable_raw_mode().unwrap();
-                        std::process::exit(0);
-                    }
-                    _ => {}
-                }
-            }
-        }
-    };
-
-    disable_raw_mode().unwrap();
-    println!(); 
-    result
 }
 
 struct PileStats {
@@ -411,17 +293,19 @@ fn main() {
     let win_rate = game_stats.win_percentage();
 
     
-    /*/ --- TEST LAB: HARDCODED CARDS ---
+    /*// --- TEST LAB: HARDCODED CARDS ---
     // Manually build a table to test specific scenarios
     table = vec![
         Card { suit: Suit::Spades, rank: Rank::Five },
         Card { suit: Suit::Hearts, rank: Rank::Five },
         Card { suit: Suit::Diamonds, rank: Rank::Five },
+        Card { suit: Suit::Diamonds, rank: Rank::Ace },
+
     ];
 
     // Manually build your player hand
     player_hand = vec![
-        Card { suit: Suit::Clubs, rank: Rank::Five },
+        Card { suit: Suit::Clubs, rank: Rank::Six },
         Card { suit: Suit::Diamonds, rank: Rank::King },
         Card { suit: Suit::Spades, rank: Rank::Seven }
     ];*/
@@ -454,7 +338,9 @@ fn main() {
 
     // 🤖 DYNAMIC DIFFICULTY ADJUSTMENT (DDA)
     // Default to Easy, but switch to Hard if the player is dominating over a sample size of games
-    let current_difficulty = if game_stats.total_games >= 5 && win_rate >= 65.0 {
+    let display_win_rate = (win_rate * 10.0).round() / 10.0;
+
+    let current_difficulty = if game_stats.total_games >= 5 && display_win_rate >= 65.0 {
         Difficulty::Hard
     } else {
         Difficulty::Easy
@@ -610,7 +496,7 @@ fn main() {
                     0
                 } else {
                     // 🎯 NEW INTERACTIVE MENU
-                    select_card_with_arrows(&player_hand)
+                    ui::select_card_with_arrows(&player_hand)
                     
                     // 💡 COMMENTED OUT OLD VALIDATION FALLBACK:
                     // validate_input(&player_hand)
